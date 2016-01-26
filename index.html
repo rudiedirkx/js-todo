@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8" />
+	<title>Todo</title>
+	<style>
+	#list:empty:after {
+		content: "EMPTY, OR LOADING...";
+	}
+	</style>
+</head>
+
+<body>
+	<ul id="list"></ul>
+
+	<form>
+		<input type="hidden" name="id" value="" />
+		<p><input name="text" /></p>
+		<p><button>Save</button></p>
+	</form>
+
+	<script src="https://store.webblocks.nl/ObjectStore.js"></script>
+	<script>
+	var secret = getSecret();
+	var store = new ObjectStore('https://store.webblocks.nl', secret);
+
+	var priorities = ['high', 'medium', 'low'];
+
+	var items;
+	loadItems().then(showItems);
+
+	document.querySelector('#list').addEventListener('click', function(e) {
+		if (e.target.nodeName == 'INPUT') {
+			e.preventDefault();
+			toggleItem(e.target.parentNode);
+		}
+		else if (e.target.nodeName == 'A') {
+			e.preventDefault();
+			editItem(e.target.parentNode);
+		}
+	});
+
+	function editItem(li) {
+
+	}
+
+	function toggleItem(li) {
+
+	}
+
+	function showItems() {
+		document.querySelector('#list').innerHTML = items.map(function(item) {
+			var html = item.text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+			return	'<li data-id="' + item.id + '" class="' + priorities[item.priority] + '">' +
+					'<input type="checkbox" />' +
+					html +
+					' (<a href="">edit</a>)' +
+					'</li>';
+		}).join('');
+	}
+
+	function loadItems() {
+		return store.get('todo').then(function(rsp) {
+			items = rsp.value || [];
+		}).catch(function(rsp) {
+			alert(rsp.error);
+		});
+	}
+
+	function getSecret() {
+		return location.hostname.split('.')[0];
+	}
+
+	</script>
+</body>
+
+</html>
