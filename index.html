@@ -5,8 +5,22 @@
 	<meta charset="utf-8" />
 	<title>Todo</title>
 	<style>
+	* {
+		margin: 0;
+		padding: 0;
+		box-sizing: border-box;
+	}
 	#list:empty:after {
 		content: "EMPTY, OR LOADING...";
+	}
+	.high {
+		color: red;
+	}
+	.medium {
+		color: orange;
+	}
+	.low {
+		color: green;
 	}
 	</style>
 </head>
@@ -15,15 +29,20 @@
 	<ul id="list"></ul>
 
 	<form>
-		<input type="hidden" name="id" value="" />
-		<p><input name="text" /></p>
-		<p><button>Save</button></p>
+		<input style="display: none" name="id" value="" />
+		<textarea name="text" required></textarea>
+		<select name="priority">
+			<option value="0">high</option>
+			<option value="1" selected>medium</option>
+			<option value="2">low</option>
+		</select>
+		<button>Save</button>
 	</form>
 
-	<script src="https://store.webblocks.nl/ObjectStore.js"></script>
+	<script src="//home.hotblocks.nl/tests/Objective/ObjectStore.js"></script>
 	<script>
 	var secret = getSecret();
-	var store = new ObjectStore('https://store.webblocks.nl', secret);
+	var store = new ObjectStore('//home.hotblocks.nl/tests/Objective/', secret);
 
 	var priorities = ['high', 'medium', 'low'];
 
@@ -33,16 +52,52 @@
 	document.querySelector('#list').addEventListener('click', function(e) {
 		if (e.target.nodeName == 'INPUT') {
 			e.preventDefault();
-			toggleItem(e.target.parentNode);
+			toggleItem(e.target.parentNode.parentNode);
 		}
 		else if (e.target.nodeName == 'A') {
 			e.preventDefault();
-			editItem(e.target.parentNode);
+			editItem(e.target.parentNode.parentNode);
 		}
 	});
 
-	function editItem(li) {
+	document.querySelector('form').addEventListener('submit', function(e) {
+		e.preventDefault();
 
+		saveItem(this);
+	});
+
+	function saveItem(form) {
+		var els = form.elements;
+		var item = {
+			id: els.id.value || String(Math.random()).substr(2),
+			text: els.text.value.trim(),
+			priority: parseInt(els.priority.value),
+		};
+
+		var index = items.map(function(item) {
+			return item.id;
+		}).indexOf(els.id.value);
+		var work = index == -1 ? store.push('todo', item) : store.put('todo.' + index, item);
+		work.then(function() {
+			loadItems().then(showItems).then(function() {
+				form.reset();
+			});
+		}).catch(function(rsp) {
+			alert(rsp.error);
+		});
+	}
+
+	function editItem(li) {
+		var elements = document.querySelector('form').elements;
+
+		var id = li.dataset.id;
+		var item = items.filter(function(item) {
+			return item.id == id;
+		})[0];
+
+		elements.id.value = item.id;
+		elements.text.value = item.text;
+		elements.priority.value = String(item.priority);
 	}
 
 	function toggleItem(li) {
@@ -50,12 +105,15 @@
 	}
 
 	function showItems() {
+console.log('showItems', items);
 		document.querySelector('#list').innerHTML = items.map(function(item) {
 			var html = item.text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-			return	'<li data-id="' + item.id + '" class="' + priorities[item.priority] + '">' +
-					'<input type="checkbox" />' +
+			var checked = item.done ? 'checked' : '';
+			var done = item.done ? 'done' : 'not-done';
+			return	'<li data-id="' + item.id + '" class="' + priorities[item.priority] + ' ' + done + '">' +
+					'<span class="checkbox"><input type="checkbox" ' + checked + ' /></span> ' +
 					html +
-					' (<a href="">edit</a>)' +
+					' <span class="edit">(<a href="">edit</a>)</span>' +
 					'</li>';
 		}).join('');
 	}
@@ -63,7 +121,7 @@
 	function loadItems() {
 		return store.get('todo').then(function(rsp) {
 			items = rsp.value || [];
-		}).catch(function(rsp) {
+		}, function(rsp) {
 			alert(rsp.error);
 		});
 	}
