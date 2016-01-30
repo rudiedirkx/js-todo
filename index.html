@@ -3,6 +3,7 @@
 
 <head>
 	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>Todo</title>
 	<style>
 	* {
@@ -10,9 +11,29 @@
 		padding: 0;
 		box-sizing: border-box;
 	}
+	body {
+		max-width: 600px;
+		padding: 2px;
+	}
+	body:not(.loaded) form {
+		display: none;
+	}
+
 	#list:empty:after {
 		content: "EMPTY, OR LOADING...";
 	}
+	#list, .item {
+		display: block;
+		list-style: none;
+	}
+	.item {
+		background-color: #eee;
+		padding: 5px;
+	}
+	.item + .item {
+		margin-top: 5px;
+	}
+
 	.high {
 		color: red;
 	}
@@ -22,6 +43,23 @@
 	.low {
 		color: green;
 	}
+
+	form {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		margin-top: 10px;
+	}
+	form .text {
+		width: 100%;
+		margin-bottom: 10px;
+		height: 4em;
+	}
+	form .priority,
+	form .button {
+		width: 32%;
+		height: 2em;
+	}
 	</style>
 </head>
 
@@ -30,13 +68,14 @@
 
 	<form>
 		<input style="display: none" name="id" value="" />
-		<textarea name="text" required></textarea>
-		<select name="priority">
+		<textarea class="text" name="text" required></textarea>
+		<select class="priority" name="priority">
 			<option value="0">high</option>
 			<option value="1" selected>medium</option>
 			<option value="2">low</option>
 		</select>
-		<button>Save</button>
+		<input class="button" type="submit" value="Save" />
+		<input class="button" type="reset" value="Reset" />
 	</form>
 
 	<script src="//home.hotblocks.nl/tests/Objective/ObjectStore.js"></script>
@@ -46,8 +85,13 @@
 
 	var priorities = ['high', 'medium', 'low'];
 
-	var items;
-	loadItems().then(showItems);
+	var rawItems;
+	loadItems().then(showItems).then(function() {
+		document.body.classList.add('loaded');
+
+		console.debug('ready:', (performance.timing.domContentLoadedEventEnd - performance.timing.navigationStart) + ' ms');
+		console.debug('init:', (Date.now() - performance.timing.domContentLoadedEventEnd) + ' ms');
+	});
 
 	document.querySelector('#list').addEventListener('click', function(e) {
 		if (e.target.nodeName == 'INPUT') {
@@ -66,24 +110,45 @@
 		saveItem(this);
 	});
 
+	function getItem(id) {
+		for (var i=0; i<rawItems.length; i++) {
+			var item = rawItems[i];
+			if (item.id == id) {
+				item.index = i;
+				return item;
+			}
+		}
+	}
+
 	function saveItem(form) {
 		var els = form.elements;
-		var item = {
-			id: els.id.value || String(Math.random()).substr(2),
-			text: els.text.value.trim(),
-			priority: parseInt(els.priority.value),
-		};
 
-		var index = items.map(function(item) {
-			return item.id;
-		}).indexOf(els.id.value);
-		var work = index == -1 ? store.push('todo', item) : store.put('todo.' + index, item);
-		work.then(function() {
+		// Find item, or create new
+		var now = Date.now();
+		var item = getItem(els.id.value) || {
+			id: String(Math.random()).substr(2),
+			created: now,
+			done: 0,
+		};
+		var index = item.index;
+		delete item.index;
+
+		item.text = els.text.value.trim();
+		item.priority = parseInt(els.priority.value);
+		item.updated = now;
+
+		// Save, get Promise
+		var work = index == null ? store.push('todo', item) : store.put('todo.' + index, item);
+
+		// Handle Promise
+		return work.then(function(rsp) {
 			loadItems().then(showItems).then(function() {
 				form.reset();
 			});
+			return rsp;
 		}).catch(function(rsp) {
-			alert(rsp.error);
+			alert('saveItem() error:\n\n' + rsp.error);
+			return Promise.reject(rsp);
 		});
 	}
 
@@ -91,26 +156,33 @@
 		var elements = document.querySelector('form').elements;
 
 		var id = li.dataset.id;
-		var item = items.filter(function(item) {
-			return item.id == id;
-		})[0];
+		var item = getItem(id);
+console.log(item);
 
 		elements.id.value = item.id;
 		elements.text.value = item.text;
 		elements.priority.value = String(item.priority);
+
+		setTimeout(function() {
+			elements.text.focus();
+		});
 	}
 
 	function toggleItem(li) {
-
+		var id = li.dataset.id;
+		var index = rawItems.map(function(item) {
+			return item.id;
+		}).indexOf(id);
+		var item = rawItems[item];
 	}
 
-	function showItems() {
+	function showItems(items) {
 console.log('showItems', items);
 		document.querySelector('#list').innerHTML = items.map(function(item) {
 			var html = item.text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 			var checked = item.done ? 'checked' : '';
 			var done = item.done ? 'done' : 'not-done';
-			return	'<li data-id="' + item.id + '" class="' + priorities[item.priority] + ' ' + done + '">' +
+			return	'<li data-id="' + item.id + '" class="item ' + priorities[item.priority] + ' ' + done + '">' +
 					'<span class="checkbox"><input type="checkbox" ' + checked + ' /></span> ' +
 					html +
 					' <span class="edit">(<a href="">edit</a>)</span>' +
@@ -120,9 +192,18 @@ console.log('showItems', items);
 
 	function loadItems() {
 		return store.get('todo').then(function(rsp) {
-			items = rsp.value || [];
+			var items = rsp.value || [];
+			rawItems = JSON.parse(JSON.stringify(items));
+			items.sort(function(a, b) {
+				if (a.priority == b.priority) {
+					return (b.created || 0) - (a.created || 0);
+				}
+				return a.priority - b.priority;
+			});
+			return items;
 		}, function(rsp) {
-			alert(rsp.error);
+			alert('loadItems() error:\n\n' + rsp.error);
+			return Promise.reject(rsp);
 		});
 	}
 
